@@ -6,7 +6,11 @@ export const createTransaction = async (userId, symbol, type, quantity, price, t
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [userId, symbol, type, quantity, price, total]
   );
-  return result.rows[0];
+  const tx = result.rows[0];
+  tx.quantity = parseFloat(tx.quantity);
+  tx.price = parseFloat(tx.price);
+  tx.total = parseFloat(tx.total);
+  return tx;
 };
 
 export const getUserTransactions = async (userId) => {
@@ -14,5 +18,10 @@ export const getUserTransactions = async (userId) => {
     'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC',
     [userId]
   );
-  return result.rows;
+  return result.rows.map(row => ({
+    ...row,
+    quantity: parseFloat(row.quantity),
+    price: parseFloat(row.price),
+    total: parseFloat(row.total),
+  }));
 };

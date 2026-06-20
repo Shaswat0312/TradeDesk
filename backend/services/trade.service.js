@@ -1,8 +1,5 @@
 import pool from '../config/db.js';
 import { getLiveQuote } from './stock.service.js';
-import { getHolding, upsertHolding, deleteHolding } from '../models/portfolio.model.js';
-import { createTransaction } from '../models/transaction.model.js';
-import { findUserById, updateBalance } from '../models/user.model.js';
 
 export const buyStock = async (userId, symbol, quantity) => {
   const quote = await getLiveQuote(symbol);
@@ -14,38 +11,67 @@ export const buyStock = async (userId, symbol, quantity) => {
 
   const totalCost = price * quantity;
 
-  const user = await findUserById(userId);
-  if (user.balance < totalCost) {
-    throw new Error('Insufficient balance');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const userResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const balance = parseFloat(userResult.rows[0].balance);
+
+    if (balance < totalCost) {
+      throw new Error('Insufficient balance');
+    }
+
+    const holdingResult = await client.query(
+      'SELECT * FROM portfolio WHERE user_id = $1 AND symbol = $2',
+      [userId, symbol]
+    );
+    const existingHolding = holdingResult.rows[0];
+
+    let newQuantity = quantity;
+    let newAvgPrice = price;
+
+    if (existingHolding) {
+      const oldQty = parseFloat(existingHolding.quantity);
+      const oldAvg = parseFloat(existingHolding.avg_buy_price);
+      newQuantity = oldQty + quantity;
+      newAvgPrice = ((oldQty * oldAvg) + (quantity * price)) / newQuantity;
+    }
+
+    await client.query(
+      `INSERT INTO portfolio (user_id, symbol, quantity, avg_buy_price)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, symbol)
+       DO UPDATE SET quantity = $3, avg_buy_price = $4`,
+      [userId, symbol, newQuantity, newAvgPrice]
+    );
+
+    await client.query('UPDATE users SET balance = $1 WHERE id = $2', [balance - totalCost, userId]);
+
+    const txResult = await client.query(
+      `INSERT INTO transactions (user_id, symbol, type, quantity, price, total)
+       VALUES ($1, $2, 'BUY', $3, $4, $5) RETURNING *`,
+      [userId, symbol, quantity, price, totalCost]
+    );
+
+    await client.query('COMMIT');
+
+    const tx = txResult.rows[0];
+    tx.quantity = parseFloat(tx.quantity);
+    tx.price = parseFloat(tx.price);
+    tx.total = parseFloat(tx.total);
+    return tx;
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const existingHolding = await getHolding(userId, symbol);
-
-  let newQuantity = quantity;
-  let newAvgPrice = price;
-
-  if (existingHolding) {
-    const oldQty = parseFloat(existingHolding.quantity);
-    const oldAvg = parseFloat(existingHolding.avg_buy_price);
-
-    newQuantity = oldQty + quantity;
-    newAvgPrice = ((oldQty * oldAvg) + (quantity * price)) / newQuantity;
-  }
-
-  await upsertHolding(userId, symbol, newQuantity, newAvgPrice);
-  await updateBalance(userId, user.balance - totalCost);
-  const transaction = await createTransaction(userId, symbol, 'BUY', quantity, price, totalCost);
-
-  return transaction;
 };
 
 export const sellStock = async (userId, symbol, quantity) => {
-  const holding = await getHolding(userId, symbol);
-
-  if (!holding || parseFloat(holding.quantity) < quantity) {
-    throw new Error('Insufficient shares to sell');
-  }
-
   const quote = await getLiveQuote(symbol);
   const price = quote.c;
 
@@ -53,19 +79,56 @@ export const sellStock = async (userId, symbol, quantity) => {
     throw new Error('Invalid price received for symbol');
   }
 
-  const totalValue = price * quantity;
-  const remainingQty = parseFloat(holding.quantity) - quantity;
+  const client = await pool.connect();
 
-  if (remainingQty === 0) {
-    await deleteHolding(userId, symbol);
-  } else {
-    await upsertHolding(userId, symbol, remainingQty, holding.avg_buy_price);
+  try {
+    await client.query('BEGIN');
+
+    const holdingResult = await client.query(
+      'SELECT * FROM portfolio WHERE user_id = $1 AND symbol = $2',
+      [userId, symbol]
+    );
+    const holding = holdingResult.rows[0];
+
+    if (!holding || parseFloat(holding.quantity) < quantity) {
+      throw new Error('Insufficient shares to sell');
+    }
+
+    const totalValue = price * quantity;
+    const remainingQty = parseFloat(holding.quantity) - quantity;
+
+    if (remainingQty === 0) {
+      await client.query('DELETE FROM portfolio WHERE user_id = $1 AND symbol = $2', [userId, symbol]);
+    } else {
+      await client.query(
+        'UPDATE portfolio SET quantity = $1 WHERE user_id = $2 AND symbol = $3',
+        [remainingQty, userId, symbol]
+      );
+    }
+
+    const userResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const balance = parseFloat(userResult.rows[0].balance);
+
+    await client.query('UPDATE users SET balance = $1 WHERE id = $2', [balance + totalValue, userId]);
+
+    const txResult = await client.query(
+      `INSERT INTO transactions (user_id, symbol, type, quantity, price, total)
+       VALUES ($1, $2, 'SELL', $3, $4, $5) RETURNING *`,
+      [userId, symbol, quantity, price, totalValue]
+    );
+
+    await client.query('COMMIT');
+
+    const tx = txResult.rows[0];
+    tx.quantity = parseFloat(tx.quantity);
+    tx.price = parseFloat(tx.price);
+    tx.total = parseFloat(tx.total);
+    return tx;
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const user = await findUserById(userId);
-  await updateBalance(userId, user.balance + totalValue);
-
-  const transaction = await createTransaction(userId, symbol, 'SELL', quantity, price, totalValue);
-
-  return transaction;
 };

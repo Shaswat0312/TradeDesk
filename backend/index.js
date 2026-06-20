@@ -8,6 +8,10 @@ import './config/db.js';
 import './config/redis.js';
 import stockRoutes from './routes/stock.route.js';
 import historicalDataRoutes from './routes/historicalData.route.js';
+import tradeRoutes from './routes/trade.route.js';
+import portfolioRoutes from './routes/portfolio.route.js';
+import backtestRoutes from './routes/backtest.route.js';
+import { generalLimiter } from './middlewares/rateLimiter.js';
 
 
 dotenv.config({});
@@ -15,10 +19,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(logger);
-
+app.use(generalLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/stocks', stockRoutes);
 app.use('/api/historical', historicalDataRoutes);
+app.use('/api/trade', tradeRoutes);
+app.use('/api/portfolio', portfolioRoutes);
+app.use('/api/backtest', backtestRoutes);
 app.get('/', (req, res) => {
   res.json({ message: 'TradeDesk API running' });
 });

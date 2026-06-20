@@ -5,7 +5,12 @@ export const getHolding = async (userId, symbol) => {
     'SELECT * FROM portfolio WHERE user_id = $1 AND symbol = $2',
     [userId, symbol]
   );
-  return result.rows[0];
+  const holding = result.rows[0];
+  if (holding) {
+    holding.quantity = parseFloat(holding.quantity);
+    holding.avg_buy_price = parseFloat(holding.avg_buy_price);
+  }
+  return holding;
 };
 
 export const getAllHoldings = async (userId) => {
@@ -13,7 +18,11 @@ export const getAllHoldings = async (userId) => {
     'SELECT * FROM portfolio WHERE user_id = $1',
     [userId]
   );
-  return result.rows;
+  return result.rows.map(row => ({
+    ...row,
+    quantity: parseFloat(row.quantity),
+    avg_buy_price: parseFloat(row.avg_buy_price),
+  }));
 };
 
 export const upsertHolding = async (userId, symbol, quantity, avgBuyPrice) => {

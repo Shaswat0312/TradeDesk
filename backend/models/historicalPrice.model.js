@@ -25,5 +25,13 @@ export const getHistoricalPrices = async (symbol) => {
     'SELECT * FROM historical_prices WHERE symbol = $1 ORDER BY date ASC',
     [symbol]
   );
-  return result.rows;
+
+  return result.rows.map(row => ({
+    ...row,
+    open: parseFloat(row.open),
+    high: parseFloat(row.high),
+    low: parseFloat(row.low),
+    close: parseFloat(row.close),
+    volume: parseInt(row.volume),
+  }));
 };

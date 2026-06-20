@@ -5,12 +5,16 @@ export const createUser = async (name, email, hashedPassword) => {
     'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email, balance',
     [name, email, hashedPassword]
   );
-  return result.rows[0];
+  const user = result.rows[0];
+  user.balance = parseFloat(user.balance);
+  return user;
 };
 
 export const findUserByEmail = async (email) => {
   const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-  return result.rows[0];
+  const user = result.rows[0];
+  if (user) user.balance = parseFloat(user.balance);
+  return user;
 };
 
 export const findUserById = async (id) => {
@@ -18,7 +22,9 @@ export const findUserById = async (id) => {
     'SELECT id, name, email, balance FROM users WHERE id = $1',
     [id]
   );
-  return result.rows[0];
+  const user = result.rows[0];
+  if (user) user.balance = parseFloat(user.balance);
+  return user;
 };
 
 export const updateBalance = async (userId, newBalance) => {
@@ -26,5 +32,7 @@ export const updateBalance = async (userId, newBalance) => {
     'UPDATE users SET balance = $1 WHERE id = $2 RETURNING id, name, email, balance',
     [newBalance, userId]
   );
-  return result.rows[0];
+  const user = result.rows[0];
+  user.balance = parseFloat(user.balance);
+  return user;
 };

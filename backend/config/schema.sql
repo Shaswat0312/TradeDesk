@@ -38,3 +38,17 @@ CREATE TABLE IF NOT EXISTS transactions (
   total NUMERIC(15, 4) NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  symbol VARCHAR(10) NOT NULL,
+  strategy VARCHAR(20) NOT NULL,
+  params JSONB NOT NULL,
+  initial_capital NUMERIC(15, 2) NOT NULL,
+  final_capital NUMERIC(15, 2) NOT NULL,
+  total_return NUMERIC(15, 2) NOT NULL,
+  return_percent NUMERIC(8, 4) NOT NULL,
+  trades JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
